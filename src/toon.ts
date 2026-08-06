@@ -103,6 +103,15 @@ export function renderDetail(
   return encode({ [label]: extracted });
 }
 
+/**
+ * Render an already-shaped value under a label, without a field schema.
+ * Used for composite documents (nested threads, grouped checks) that a flat
+ * FieldDef list cannot express.
+ */
+export function renderBlock(label: string, value: unknown): string {
+  return encode({ [label]: value });
+}
+
 /** Render help suggestions (manual formatting - encode() inlines primitive arrays). */
 export function renderHelp(lines: string[]): string {
   if (lines.length === 0) return "";
@@ -110,9 +119,21 @@ export function renderHelp(lines: string[]): string {
   return `help[${lines.length}]:\n${indented}`;
 }
 
-/** Render an error in TOON format. */
-export function renderError(message: string, code: string, suggestions: string[] = []): string {
-  const blocks = [encode({ error: message, code })];
+/**
+ * Render an error in TOON format. `details` carries the structured specifics -
+ * operation, endpoint, HTTP status, az exit code, the raw Azure message - so an
+ * agent can act on a failure without re-running anything.
+ */
+export function renderError(
+  message: string,
+  code: string,
+  suggestions: string[] = [],
+  details: Record<string, unknown> = {},
+): string {
+  const populated = Object.fromEntries(
+    Object.entries(details).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+  );
+  const blocks = [encode({ error: message, code, ...populated })];
   if (suggestions.length > 0) {
     blocks.push(renderHelp(suggestions));
   }

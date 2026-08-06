@@ -6,6 +6,8 @@ interface SuggestionContext {
   state?: string;
   isEmpty?: boolean;
   id?: string | number;
+  /** A concrete review-thread id, so thread suggestions are runnable as printed. */
+  threadId?: number;
   ctx?: AdoContext;
 }
 
@@ -75,13 +77,63 @@ const table: SuggestionEntry[] = [
   {
     match: (c) => c.domain === "pr" && c.action === "view" && c.state === "active",
     lines: (c) => [
+      `Run \`ado-axi pr inspect ${c.id}\` for checks, commits, files, and review threads`,
       `Run \`ado-axi pr review ${c.id} --approve\` to approve`,
       `Run \`ado-axi pr complete ${c.id}\` to complete`,
     ],
   },
   {
     match: (c) => c.domain === "pr" && c.action === "view",
-    lines: () => ["Run `ado-axi pr list` to see other pull requests"],
+    lines: (c) => [
+      `Run \`ado-axi pr inspect ${c.id}\` for checks, commits, files, and review threads`,
+      "Run `ado-axi pr list` to see other pull requests",
+    ],
+  },
+  {
+    match: (c) => c.domain === "pr" && c.action === "inspect",
+    lines: (c) => [
+      `Run \`ado-axi pr threads ${c.id} --unresolved\` to read only the open review comments`,
+      `Run \`ado-axi pr update ${c.id} --description-file <path> --dry-run\` to preview a description change`,
+      `Run \`ado-axi pr checks ${c.id}\` to re-read build and policy state`,
+    ],
+  },
+  {
+    match: (c) => c.domain === "pr" && c.action === "update",
+    lines: (c) => [
+      `Run \`ado-axi pr inspect ${c.id}\` to confirm the pull request as it now stands`,
+    ],
+  },
+  {
+    match: (c) => c.domain === "pr" && c.action === "threads" && c.isEmpty === true,
+    lines: (c) => [
+      `Run \`ado-axi pr threads ${c.id}\` without --unresolved to see resolved threads too`,
+      `Run \`ado-axi pr comment ${c.id} --description "..."\` to start a new thread`,
+    ],
+  },
+  {
+    match: (c) => c.domain === "pr" && c.action === "threads",
+    lines: (c) => [
+      `Run \`ado-axi pr thread resolve ${c.id} --thread-id ${c.threadId ?? "<thread-id>"}\` to close a thread`,
+      `Run \`ado-axi pr thread reply ${c.id} --thread-id ${c.threadId ?? "<thread-id>"} --description "..."\` to reply`,
+    ],
+  },
+  {
+    match: (c) => c.domain === "pr" && c.action === "thread-resolve",
+    lines: (c) => [`Run \`ado-axi pr threads ${c.id} --unresolved\` to see what is still open`],
+  },
+  {
+    match: (c) => c.domain === "pr" && c.action === "comment",
+    lines: (c) => [`Run \`ado-axi pr threads ${c.id}\` to see the comment in context`],
+  },
+  {
+    match: (c) => c.domain === "pr" && c.action === "checks",
+    lines: (c) => [
+      `Run \`ado-axi pr inspect ${c.id}\` to see checks alongside review threads`,
+    ],
+  },
+  {
+    match: (c) => c.domain === "pr" && (c.action === "commits" || c.action === "files"),
+    lines: (c) => [`Run \`ado-axi pr inspect ${c.id}\` for the full pull request picture`],
   },
   {
     match: (c) => c.domain === "pr" && c.action === "create",

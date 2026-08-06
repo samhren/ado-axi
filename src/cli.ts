@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runAxiCli } from "axi-sdk-js";
 import { resolveContext, type AdoContext } from "./context.js";
-import { AxiError, exitCodeForError } from "./errors.js";
+import { AdoError, AxiError, exitCodeForError } from "./errors.js";
 import { renderError } from "./toon.js";
 import { homeCommand } from "./commands/home.js";
 import { workItemCommand, WORK_ITEM_HELP } from "./commands/work-item.js";
@@ -35,6 +35,8 @@ examples:
   ado-axi work-item list --state Active
   ado-axi work-item view 1234 --org https://dev.azure.com/contoso/
   ado-axi pr list --project MyProject
+  ado-axi pr inspect 2613 --full
+  ado-axi pr threads 2613 --unresolved
   ado-axi pipeline run 12 --branch main
   ado-axi setup hooks
 `;
@@ -77,8 +79,9 @@ export async function main(options: MainOptions = {}): Promise<void> {
     },
     formatError: (error) => {
       if (error instanceof AxiError) {
+        const details = error instanceof AdoError ? error.details : {};
         return {
-          output: `${renderError(error.message, error.code, error.suggestions)}\n`,
+          output: `${renderError(error.message, error.code, error.suggestions, { ...details })}\n`,
           exitCode: exitCodeForError(error),
         };
       }

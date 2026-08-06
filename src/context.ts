@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { supportsOrgFlag, supportsProjectFlag } from "./api/az-capabilities.js";
 
 export type ContextSource = "flag" | "env" | "git" | "default";
 
@@ -121,17 +122,31 @@ function parseGitRemote(): GitRemoteMatch | undefined {
   return undefined;
 }
 
-/** Append --organization/--project flags to an az argv, skipping unresolved or default-sourced values. */
+/**
+ * Append --organization/--project flags to an az argv.
+ *
+ * Skips unresolved or default-sourced values, and - critically - only appends a
+ * flag the target az command actually declares. `az repos pr update` has no
+ * `--project` argument, so blindly appending one made argparse reject the whole
+ * call; `src/api/az-capabilities.ts` is the single source of truth for which
+ * commands accept what. `options.project: false` can suppress the flag further,
+ * but never force it on.
+ */
 export function withOrgProject(
   args: string[],
   ctx: AdoContext | undefined,
   options: { project?: boolean } = {},
 ): string[] {
   const out = [...args];
-  if (ctx?.org && ctx.org.source !== "default") {
+  if (ctx?.org && ctx.org.source !== "default" && supportsOrgFlag(args)) {
     out.push("--organization", ctx.org.value);
   }
-  if ((options.project ?? true) && ctx?.project && ctx.project.source !== "default") {
+  if (
+    (options.project ?? true) &&
+    supportsProjectFlag(args) &&
+    ctx?.project &&
+    ctx.project.source !== "default"
+  ) {
     out.push("--project", ctx.project.value);
   }
   return out;
