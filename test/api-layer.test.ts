@@ -6,7 +6,8 @@ import {
 } from "../src/api/az-capabilities.js";
 import { withOrgProject, type AdoContext } from "../src/context.js";
 import { decodeUtf8, describeAzCommand } from "../src/az.js";
-import { mapAzError, parseHttpStatus, AdoError } from "../src/errors.js";
+import { exitCodeForError, mapAzError, parseHttpStatus, AdoError } from "../src/errors.js";
+import { assertUsableApiVersion } from "../src/api/rest.js";
 import {
   checkSummary,
   filterThreads,
@@ -152,6 +153,16 @@ describe("error details", () => {
     expect(error.message).toContain("--project AI");
   });
 
+  it("explains an api-version az devops invoke cannot parse", () => {
+    const error = mapAzError("ERROR: could not convert string to float: '7.1.1'", 1, {
+      operation: "pr inspect",
+    });
+    expect(error.code).toBe("VALIDATION_ERROR");
+    expect(error.message).toContain("api-version");
+    expect(error.message).toContain("7.1.1");
+    expect(error.suggestions.join(" ")).toContain("7.1-preview.1");
+  });
+
   it("explains a Windows console encoding crash instead of leaving it raw", () => {
     const error = mapAzError(
       "UnicodeEncodeError: 'charmap' codec can't encode character '\\u221e' in position 42",
@@ -165,6 +176,32 @@ describe("error details", () => {
     expect(parseHttpStatus("ERROR: (404) Not Found")).toBe(404);
     expect(parseHttpStatus("status code: 500")).toBe(500);
     expect(parseHttpStatus("no status here")).toBeUndefined();
+  });
+});
+
+describe("api-version validation", () => {
+  // Mirrors azext_devops/dev/team/invoke.py#apiVersionToFloat: strip `-preview`,
+  // then float() the remainder.
+  it.each(["7.1", "7.1-preview", "6", "5.0", "7.2-preview"])("accepts %s", (version) => {
+    expect(() => assertUsableApiVersion(version)).not.toThrow();
+  });
+
+  it.each(["7.1-preview.1", "7.1-preview.3", "7.1.1", "latest", ""])(
+    "rejects %s, which az would crash on",
+    (version) => {
+      expect(() => assertUsableApiVersion(version)).toThrow(AdoError);
+    },
+  );
+
+  it("names the offending version and exits as a usage error", () => {
+    try {
+      assertUsableApiVersion("7.1-preview.1");
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(AdoError);
+      expect((error as AdoError).message).toContain("7.1-preview.1");
+      expect(exitCodeForError(error)).toBe(2);
+    }
   });
 });
 

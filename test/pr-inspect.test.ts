@@ -176,6 +176,20 @@ describe("pr inspect", () => {
     }
   });
 
+  it("asks for an api-version az devops invoke can actually parse", async () => {
+    const mock = install(inspectRoutes());
+    await run(["pr", "inspect", "2613"]);
+
+    const restCalls = mock.calls.filter((call) => call.args.slice(0, 2).join(" ") === "devops invoke");
+    expect(restCalls.length).toBeGreaterThan(0);
+    for (const call of restCalls) {
+      const version = call.args[call.args.indexOf("--api-version") + 1];
+      // `7.1-preview.1` reduces to "7.1.1" in the extension's own float() pre-parse
+      // and crashes it before the request is sent.
+      expect(version).toBe("7.1");
+    }
+  });
+
   it("degrades to a warning when one sub-resource is forbidden, instead of failing the whole inspection", async () => {
     install(
       inspectRoutes({

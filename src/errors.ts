@@ -106,6 +106,19 @@ const patterns: ErrorPattern[] = [
     ],
   },
   {
+    // `az devops invoke` pre-parses --api-version by stripping `-preview` and
+    // calling float() on the rest, so `7.1-preview.1` reduces to `7.1.1` and
+    // raises before the request is ever sent. See src/api/rest.ts.
+    pattern: /could not convert string to float:\s*'([^']*)'/i,
+    code: "VALIDATION_ERROR",
+    message: (m) =>
+      `az devops invoke could not parse the requested --api-version (it reduced to '${m[1]}', which is not a number)`,
+    suggestions: () => [
+      "Use a stable api-version such as `7.1`, or a bare `7.1-preview`",
+      "A resource-version suffix (`7.1-preview.1`) cannot be used with `az devops invoke`",
+    ],
+  },
+  {
     pattern: /'charmap' codec can't encode|UnicodeEncodeError|UnicodeDecodeError/i,
     code: "UNKNOWN",
     message: () =>

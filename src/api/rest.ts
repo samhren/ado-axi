@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { azRaw, decodeUtf8, parseAzJson } from "../az.js";
 import { withOrgProject, type AdoContext } from "../context.js";
-import { azNotInstalledError, mapAzError, type AzErrorContext } from "../errors.js";
+import { AdoError, azNotInstalledError, mapAzError, type AzErrorContext } from "../errors.js";
 
 export type HttpMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
@@ -14,6 +14,10 @@ export interface RestRequest {
   resource: string;
   routeParameters?: Record<string, string | number | undefined>;
   queryParameters?: Record<string, string | number | boolean | undefined>;
+  /**
+   * Overrides {@link DEFAULT_API_VERSION}. Must be a version `az devops invoke`
+   * can parse - see {@link assertUsableApiVersion}.
+   */
   apiVersion?: string;
   httpMethod?: HttpMethod;
   /** Request body; serialized to a UTF-8 temp file and passed with --in-file. */
@@ -24,7 +28,42 @@ export interface RestRequest {
   nextCommand?: string;
 }
 
-const DEFAULT_API_VERSION = "7.1-preview.1";
+/**
+ * The api-version every REST call uses unless the caller overrides it.
+ *
+ * This is deliberately the *stable* `7.1` rather than `7.1-preview.1`. Before it
+ * issues any request, `az devops invoke` pre-parses the version with its own
+ * `apiVersionToFloat()` (`azext_devops/dev/team/invoke.py`), which strips the
+ * literal `-preview` and calls Python's `float()` on whatever is left. That turns
+ * `7.1-preview.1` into `"7.1.1"` and the extension dies with
+ * `could not convert string to float: '7.1.1'` - before authenticating, so the
+ * failure looks nothing like the api-version problem it is. Reproduced on Azure
+ * CLI 2.79.0/2.88.0 with azure-devops 1.0.4 and 1.0.6; it is not fixed upstream.
+ *
+ * So a `-preview.N` version is simply unreachable through `az devops invoke`.
+ * Bare `7.1-preview` parses fine, and a caller that needs a preview-only endpoint
+ * can opt in by passing `apiVersion` explicitly.
+ */
+const DEFAULT_API_VERSION = "7.1";
+
+/**
+ * Reject an api-version `az devops invoke` cannot parse, before spawning `az`.
+ *
+ * Mirrors the extension's own `apiVersionToFloat()`. Catching it here turns an
+ * opaque Python `ValueError` into an error that names the flag at fault.
+ */
+export function assertUsableApiVersion(apiVersion: string, context: AzErrorContext = {}): void {
+  if (/^\d+(\.\d+)?$/.test(apiVersion.replace("-preview", ""))) return;
+  throw new AdoError(
+    `az devops invoke cannot parse the api-version "${apiVersion}"`,
+    "VALIDATION_ERROR",
+    [
+      "Use a stable version such as `7.1`, or a bare `7.1-preview`",
+      "A resource-version suffix (`7.1-preview.1`) is not supported: az strips `-preview` and parses the rest as a number",
+    ],
+    context,
+  );
+}
 
 /**
  * Call an Azure DevOps REST endpoint through `az devops invoke`.
@@ -49,6 +88,9 @@ export async function adoRest<T = unknown>(
     ...(request.nextCommand ? { nextCommand: request.nextCommand } : {}),
   };
 
+  const apiVersion = request.apiVersion ?? DEFAULT_API_VERSION;
+  assertUsableApiVersion(apiVersion, errorContext);
+
   const workdir = mkdtempSync(join(tmpdir(), "ado-axi-"));
   const outFile = join(workdir, "response.json");
 
@@ -63,7 +105,7 @@ export async function adoRest<T = unknown>(
       "--http-method",
       request.httpMethod ?? "GET",
       "--api-version",
-      request.apiVersion ?? DEFAULT_API_VERSION,
+      apiVersion,
       "--out-file",
       outFile,
     ];
